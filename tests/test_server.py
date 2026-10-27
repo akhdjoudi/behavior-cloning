@@ -71,3 +71,36 @@ def test_loads_a_run_directory_and_torchscript(tmp_path):
     export_dummy(str(tmp_path / "dummy.pt"))
     dummy = Predictor(str(tmp_path / "dummy.pt"))
     assert not dummy.trained and len(dummy.predict(chess.Board().fen(), [0, 1])) == 2
+
+
+@pytest.fixture(scope="module")
+def evaluator():
+    from chessstyle.evaluation import Evaluator, find_stockfish
+
+    path = find_stockfish()
+    if not path:
+        pytest.skip("Stockfish non installé")
+    ev = Evaluator(path, time_limit=0.1)
+    yield ev
+    ev.close()
+
+
+def test_eval_without_stockfish_is_503(client):
+    assert client.get("/api/info").json()["engine"] is None
+    assert client.post("/api/eval", json={"fen": chess.Board().fen()}).status_code == 503
+
+
+def test_eval_from_whites_point_of_view(evaluator):
+    c = TestClient(create_app(Predictor(), web_dist=None, evaluator=evaluator))
+    assert c.get("/api/info").json()["engine"].startswith("Stockfish")
+    start = c.post("/api/eval", json={"fen": chess.Board().fen()}).json()
+    assert abs(start["cp"]) < 80 and start["best"] in {m.uci() for m in chess.Board().legal_moves}
+    # Les Noirs matent en 1 (…Qh4#) : score négatif
+    black_mates = "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2"
+    assert c.post("/api/eval", json={"fen": black_mates}).json()["mate"] == -1
+    # Les Blancs ont une dame de plus : gros avantage ou mat forcé pour eux
+    queen_up = c.post("/api/eval", json={"fen": "4k3/8/8/8/8/8/8/3QK3 w - - 0 1"}).json()
+    assert (queen_up["mate"] or 0) > 0 or queen_up["cp"] > 500
+    mated = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+    assert c.post("/api/eval", json={"fen": mated}).json() == {"cp": None, "mate": 0, "winner": "black"}
+    assert c.post("/api/eval", json={"fen": "pas une fen"}).status_code == 400
