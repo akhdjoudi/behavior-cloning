@@ -32,10 +32,15 @@ def test_lichess_filters(tmp_path):
         make_pgn(seed=2, **{**LICHESS, "BlackElo": "2100"}),  # Elo trop bas
         make_pgn(seed=3, **{**LICHESS, "TimeControl": "60+0"}),  # bullet
         make_pgn(seed=4, plies=30, **LICHESS),  # trop courte
-        make_pgn(seed=5, **{k: v for k, v in LICHESS.items() if k != "TimeControl"}),
+        make_pgn(seed=5, WhiteElo="2300", BlackElo="2250", EventType="blitz"),  # format Elite DB
     ]
     df = run(tmp_path, "lichess", good, *bad)
     assert len(df) == 2 and set(df.player_id) == {0} and set(df.color) == {True, False}
+
+
+def test_lichess_elite_format_without_timecontrol(tmp_path):
+    df = run(tmp_path, "lichess", make_pgn(seed=1, WhiteElo="2300", BlackElo="2250", EventType="rapid"))
+    assert len(df) == 2
 
 
 def test_dedup_and_stable_game_id(tmp_path):

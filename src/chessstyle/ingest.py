@@ -62,8 +62,11 @@ def keep_lichess(game: chess.pgn.Game, plies: int) -> bool:
         return False
     if min(_elo(h, "WhiteElo"), _elo(h, "BlackElo")) < MIN_ELO:
         return False
-    seconds = _estimated_seconds(h.get("TimeControl", ""))
-    return seconds is not None and seconds >= MIN_SECONDS
+    if "TimeControl" in h:
+        seconds = _estimated_seconds(h["TimeControl"])
+        return seconds is not None and seconds >= MIN_SECONDS
+    # La Lichess Elite Database n'a pas de TimeControl, seulement EventType ("blitz", "rapid", "classical"...)
+    return h.get("EventType", "").lower() in ("rapid", "classical")
 
 
 def keep_icon(game: chess.pgn.Game) -> bool:
