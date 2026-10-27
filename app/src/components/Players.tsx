@@ -2,12 +2,12 @@ import { motion } from "motion/react";
 
 import { metaOf } from "../players";
 
-/** Monogramme carré : initiales en italique, rempli à la couleur du joueur quand il est actif. */
+/** Monogramme carré : initiales, rempli à la couleur du joueur quand il est actif. */
 export function Monogram({ name, size = 36, active = false }: { name: string; size?: number; active?: boolean }) {
   const m = metaOf(name);
   return (
     <span
-      className="grid shrink-0 place-items-center border font-serif italic leading-none transition-colors"
+      className="grid shrink-0 place-items-center border font-serif leading-none transition-colors"
       style={{
         width: size,
         height: size,
@@ -64,23 +64,50 @@ export function PlayerIndex({ players, selected, onSelect }: { players: string[]
   );
 }
 
-/** Sélecteur compact des pages de jeu : une rangée de monogrammes. */
-export function PlayerSwitcher({ players, selected, onSelect }: { players: string[]; selected: number; onSelect: (id: number) => void }) {
+/** Sélecteur des pages de jeu : une rangée de monogrammes. `excluded` est grisé (l'adversaire, pour l'inspiration). */
+export function PlayerSwitcher({
+  players,
+  selected,
+  onSelect,
+  label,
+  excluded,
+  excludedReason,
+  size = "lg",
+}: {
+  players: string[];
+  selected: number;
+  onSelect: (id: number) => void;
+  label?: string;
+  excluded?: number;
+  excludedReason?: string;
+  size?: "lg" | "sm";
+}) {
   const m = metaOf(players[selected] ?? "");
   return (
     <div>
+      {label && <p className="label mb-2.5">{label}</p>}
       <div className="flex flex-wrap gap-1.5">
-        {displayOrder(players).map((id) => (
-          <button key={id} onClick={() => onSelect(id)} title={metaOf(players[id]).short} className="transition-transform hover:-translate-y-0.5">
-            <Monogram name={players[id]} active={id === selected} />
-          </button>
-        ))}
+        {displayOrder(players).map((id) => {
+          const blocked = id === excluded;
+          return (
+            <button
+              key={id}
+              onClick={() => !blocked && onSelect(id)}
+              disabled={blocked}
+              title={blocked ? excludedReason : metaOf(players[id]).short}
+              className="relative transition-transform enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-25"
+            >
+              <Monogram name={players[id]} active={id === selected} size={size === "lg" ? 36 : 30} />
+              {blocked && <span className="absolute left-1/2 top-1/2 h-px w-[130%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-ink" />}
+            </button>
+          );
+        })}
       </div>
-      <div className="mt-4">
-        <div className="font-serif text-4xl leading-none">
-          {m.first} <em style={{ color: m.accent }}>{m.last}</em>
+      <div className={size === "lg" ? "mt-4" : "mt-3"}>
+        <div className={`font-serif leading-none ${size === "lg" ? "text-4xl" : "text-[28px]"}`}>
+          {m.first} <span style={{ color: m.accent }}>{m.last}</span>
         </div>
-        <div className="mt-1.5 font-serif text-lg italic text-muted">{m.nickname}</div>
+        <div className="mt-1.5 font-serif text-lg text-muted">{m.nickname}</div>
       </div>
     </div>
   );

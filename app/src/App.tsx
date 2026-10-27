@@ -28,7 +28,8 @@ export default function App() {
   const [apiError, setApiError] = useState(false);
   const game = useRef(new Chess());
   const [fen, setFen] = useState(game.current.fen());
-  const [player, setPlayer] = useState(1);
+  const [player, setPlayer] = useState(1); // joueur étudié, ou adversaire en mode Jouer
+  const [coach, setCoach] = useState(2); // inspiration en mode Jouer : jamais l'adversaire
   const [view, setView] = useState<View>("joueurs");
   const [orientation, setOrientation] = useState<Color>("white");
   const [userColor, setUserColor] = useState<Color>("white");
@@ -45,6 +46,9 @@ export default function App() {
   const chess = game.current;
   const players = info?.players ?? [];
   const meta = metaOf(players[player] ?? "Tal");
+  // Pas de match miroir : si l'inspiration est l'adversaire, on prend le premier autre joueur
+  const inspiration = coach !== player ? coach : (displayOrder(players).find((i) => i !== player) ?? 0);
+  const inspirationMeta = metaOf(players[inspiration] ?? "Petrosian");
   const turn: Color = chess.turn() === "w" ? "white" : "black";
   const gameOver = chess.isGameOver();
   const onBoard = view !== "joueurs";
@@ -63,7 +67,7 @@ export default function App() {
   // Prédictions de la position courante : le joueur choisi, ou tout le monde en mode duel
   useEffect(() => {
     if (!info || !onBoard) return;
-    const wanted = view === "duel" ? [...info.players.keys()] : [player];
+    const wanted = view === "duel" ? [...info.players.keys()] : view === "jouer" ? [player, inspiration] : [player];
     let cancelled = false;
     predict(fen, wanted)
       .then((byPlayer) => !cancelled && setPreds({ fen, byPlayer }))
@@ -71,7 +75,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [fen, player, view, info, onBoard]);
+  }, [fen, player, inspiration, view, info, onBoard]);
 
   const current = preds.fen === fen ? preds.byPlayer : undefined;
 
@@ -110,17 +114,20 @@ export default function App() {
     setOrientation(c);
     reset();
   };
+  const chooseOpponent = (id: number) => {
+    if (id === inspiration) setCoach(player); // l'ancien adversaire devient l'inspiration
+    setPlayer(id);
+  };
   const goTo = (v: View) => {
     setView(v);
-    if (v === "jouer") {
-      setShowArrows(false);
-      setOrientation(userColor);
-    } else setShowArrows(true);
+    if (v === "jouer") setOrientation(userColor);
+    setShowArrows(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const shapes: DrawShape[] = useMemo(() => {
     if (!current || !showArrows) return [];
+    if (view === "jouer") return botTurn ? [] : arrowsFor(current.get(inspiration));
     if (view !== "duel") return arrowsFor(current.get(player));
     // Duel : la flèche préférée de chaque joueur, à sa couleur
     return [...current.entries()]
@@ -131,7 +138,7 @@ export default function App() {
         brush: `pl-${players[id]}`,
         modifiers: { lineWidth: 9 },
       }));
-  }, [current, showArrows, view, player, players]);
+  }, [current, showArrows, view, player, inspiration, botTurn, players]);
 
   const status = chess.isCheckmate()
     ? `Échec et mat, ${turn === "white" ? "les Noirs" : "les Blancs"} gagnent`
@@ -152,7 +159,7 @@ export default function App() {
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-5 lg:px-10">
           <button onClick={() => goTo("joueurs")} className="flex items-baseline gap-3 text-left">
             <span className="font-serif text-[26px] leading-none">
-              Style <em>Cloning</em>
+              Style Cloning
             </span>
             <span className="label hidden md:inline">Échecs · imitation de style</span>
           </button>
@@ -230,7 +237,7 @@ export default function App() {
                         initial={{ opacity: 0, y: -3 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 3 }}
-                        className="font-serif text-2xl italic"
+                        className="font-serif text-2xl"
                       >
                         {status}
                       </motion.p>
@@ -248,7 +255,7 @@ export default function App() {
                       check={chess.inCheck()}
                       shapes={shapes}
                       onMove={(from, to) => play(from, to)}
-                      accent={meta.accent}
+                      accent={view === "jouer" ? inspirationMeta.accent : meta.accent}
                     />
                   </div>
                   <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -274,7 +281,22 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <PlayerSwitcher players={players} selected={player} onSelect={setPlayer} />
+                    {view === "jouer" ? (
+                      <div className="space-y-8">
+                        <PlayerSwitcher label="Ton adversaire" players={players} selected={player} onSelect={chooseOpponent} />
+                        <PlayerSwitcher
+                          label="Ton inspiration · ses conseils et ses flèches"
+                          size="sm"
+                          players={players}
+                          selected={inspiration}
+                          onSelect={setCoach}
+                          excluded={player}
+                          excludedReason="C'est ton adversaire : pas de match miroir"
+                        />
+                      </div>
+                    ) : (
+                      <PlayerSwitcher players={players} selected={player} onSelect={setPlayer} />
+                    )}
                     {view === "jouer" && (
                       <Block title="Ta partie">
                         <div className="flex flex-wrap gap-x-6 gap-y-3">
@@ -290,9 +312,15 @@ export default function App() {
                         </div>
                       </Block>
                     )}
-                    <Block title={view === "jouer" ? `${meta.short} à ta place` : `Ce que jouerait ${meta.short}`} note="probabilité du modèle">
-                      <MoveBars moves={current?.get(player)} accent={meta.accent} onPick={view === "analyse" && !gameOver ? playUci : undefined} />
-                    </Block>
+                    {view === "jouer" ? (
+                      <Block title={`${inspirationMeta.short} à ta place`} note={botTurn ? `${meta.short} joue…` : "probabilité du modèle"}>
+                        <MoveBars moves={botTurn ? undefined : current?.get(inspiration)} accent={inspirationMeta.accent} />
+                      </Block>
+                    ) : (
+                      <Block title={`Ce que jouerait ${meta.short}`} note="probabilité du modèle">
+                        <MoveBars moves={current?.get(player)} accent={meta.accent} onPick={view === "analyse" && !gameOver ? playUci : undefined} />
+                      </Block>
+                    )}
                     <Block title="Partie">
                       <MoveList sans={history.map((m) => m.san)} />
                     </Block>
@@ -350,7 +378,7 @@ function Check({ on, children, ...props }: { on: boolean } & React.ButtonHTMLAtt
 function MoveList({ sans }: { sans: string[] }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: "nearest" }), [sans.length]);
-  if (!sans.length) return <p className="font-serif text-lg italic text-muted">Aucun coup pour l'instant.</p>;
+  if (!sans.length) return <p className="font-serif text-lg text-muted">Aucun coup pour l'instant.</p>;
   const rows = [];
   for (let i = 0; i < sans.length; i += 2) rows.push([sans[i], sans[i + 1]]);
   return (
