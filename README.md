@@ -47,6 +47,7 @@ python -m chessstyle.server --model runs/latest     # http://127.0.0.1:8000
 ```
 
 `--model` accepte un dossier de run de `train.py` ou un fichier TorchScript (`python -m chessstyle.model` crée `dummy_model.pt`). Sans `--model`, les poids sont aléatoires.
+La barre d'évaluation utilise Stockfish s'il est installé (`sudo apt install stockfish`, ou `--stockfish CHEMIN`) ; sinon elle est masquée.
 Pour développer l'interface avec rechargement à chaud : lancer le serveur, puis `cd app && npm run dev` (http://localhost:5173, les appels `/api` partent vers le port 8000).
 
 ## Règles
