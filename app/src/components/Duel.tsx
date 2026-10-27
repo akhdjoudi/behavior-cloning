@@ -68,7 +68,7 @@ export function Duel({ players, preds, fen, orientation, turnColor, lastMove }: 
             <figcaption className="mt-3 flex items-baseline justify-between gap-2">
               <span className="truncate font-serif text-xl leading-none">{m.last}</span>
               {best && (
-                <span className="font-serif text-xl italic leading-none" style={{ color: m.accent }}>
+                <span className="font-serif text-xl leading-none" style={{ color: m.accent }}>
                   {best.san}
                 </span>
               )}
