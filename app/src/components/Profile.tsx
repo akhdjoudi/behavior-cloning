@@ -89,7 +89,7 @@ export function Profile({ name, player, index, ready, onPlay, onAnalyse }: Props
         {/* Initiales géantes en filigrane */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -top-6 right-0 select-none font-serif text-[9rem] italic leading-none sm:text-[15rem] lg:-top-12 lg:text-[19rem]"
+          className="pointer-events-none absolute -top-6 right-0 select-none font-serif text-[9rem] leading-none sm:text-[15rem] lg:-top-12 lg:text-[19rem]"
           style={{ color: m.accent, opacity: 0.1 }}
         >
           {m.initials}
@@ -101,9 +101,9 @@ export function Profile({ name, player, index, ready, onPlay, onAnalyse }: Props
         <h2 className="mt-3 font-serif text-[64px] leading-[0.88] tracking-[-0.01em] sm:text-[96px] lg:text-[112px]">
           {m.first}
           <br />
-          <em style={{ color: m.accent }}>{m.last}</em>
+          <span style={{ color: m.accent }}>{m.last}</span>
         </h2>
-        <p className="mt-4 font-serif text-2xl italic text-muted">« {m.nickname} »</p>
+        <p className="mt-4 font-serif text-2xl text-muted">« {m.nickname} »</p>
         <p className="mt-6 max-w-2xl text-[17px] leading-relaxed">{m.style}</p>
 
         <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2">
@@ -158,7 +158,7 @@ export function Profile({ name, player, index, ready, onPlay, onAnalyse }: Props
               <span className="label">{TYPICAL_PLIES / 2} premiers coups</span>
             </div>
             <p className="mt-4 min-h-[2.5em] font-serif text-[28px] leading-snug">
-              {line ? formatLine(line.sans) : <span className="text-muted italic">Le modèle réfléchit…</span>}
+              {line ? formatLine(line.sans) : <span className="text-muted">Le modèle réfléchit…</span>}
             </p>
             <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">
               Le modèle joue les deux camps comme {m.short}, en choisissant à chaque fois son coup le plus probable.
@@ -183,7 +183,7 @@ export function Profile({ name, player, index, ready, onPlay, onAnalyse }: Props
 
         <section className="mt-12 border-t border-rule pt-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="font-serif text-2xl italic">Signature de style</h3>
+            <h3 className="font-serif text-2xl">Signature de style</h3>
             <span className="label">bientôt · benchmark Stockfish</span>
           </div>
           <p className="mt-2 max-w-xl text-sm text-muted">

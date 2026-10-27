@@ -21,7 +21,7 @@ export function MoveBars({ moves, accent, onPick, count = 5, size = "lg" }: Prop
         ))}
       </div>
     );
-  if (!moves.length) return <p className="font-serif text-lg italic text-muted">Partie terminée.</p>;
+  if (!moves.length) return <p className="font-serif text-lg text-muted">Partie terminée.</p>;
   return (
     <ol>
       <AnimatePresence initial={false} mode="popLayout">
