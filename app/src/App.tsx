@@ -4,8 +4,9 @@ import { Chess, type Square } from "chess.js";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getInfo, predict, sampleMove, type Info, type MoveProb } from "./api";
+import { evaluate, getInfo, predict, sampleMove, type Evaluation, type Info, type MoveProb } from "./api";
 import { arrowsFor, Board } from "./components/Board";
+import { EvalBar, evalLabel } from "./components/EvalBar";
 import { Consensus, Duel } from "./components/Duel";
 import { MoveBars } from "./components/MoveBars";
 import { displayOrder, PlayerIndex, PlayerSwitcher } from "./components/Players";
@@ -35,6 +36,8 @@ export default function App() {
   const [userColor, setUserColor] = useState<Color>("white");
   const [vary, setVary] = useState(false);
   const [showArrows, setShowArrows] = useState(true);
+  const [showEval, setShowEval] = useState(true);
+  const [evaluation, setEvaluation] = useState<{ fen: string; data: Evaluation }>();
   const [preds, setPreds] = useState<{ fen: string; byPlayer: Map<number, MoveProb[]> }>({ fen: "", byPlayer: new Map() });
 
   useEffect(() => {
@@ -78,6 +81,23 @@ export default function App() {
   }, [fen, player, inspiration, view, info, onBoard]);
 
   const current = preds.fen === fen ? preds.byPlayer : undefined;
+
+  // Évaluation Stockfish : petite attente pour ne pas analyser chaque position traversée en rafale
+  const evalOn = !!info?.engine && onBoard && showEval;
+  useEffect(() => {
+    if (!evalOn) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      evaluate(fen)
+        .then((data) => !cancelled && setEvaluation({ fen, data }))
+        .catch(() => {});
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [fen, evalOn]);
+  const freshEval = evaluation?.fen === fen ? evaluation.data : undefined;
 
   const play = useCallback((from: string, to: string, promotion?: string) => {
     const g = game.current;
@@ -242,9 +262,14 @@ export default function App() {
                         {status}
                       </motion.p>
                     </AnimatePresence>
-                    <span className="label">Coup {Math.floor(history.length / 2) + 1}</span>
+                    <span className="label">
+                      Coup {Math.floor(history.length / 2) + 1}
+                      {evalOn && freshEval && ` · Stockfish ${evalLabel(freshEval)}`}
+                    </span>
                   </div>
-                  <div className="board-frame">
+                  <div className="board-frame flex gap-[7px]">
+                    {evalOn && <EvalBar evaluation={evaluation?.data} orientation={orientation} />}
+                    <div className="min-w-0 flex-1">
                     <Board
                       fen={fen}
                       orientation={orientation}
@@ -257,6 +282,7 @@ export default function App() {
                       onMove={(from, to) => play(from, to)}
                       accent={view === "jouer" ? inspirationMeta.accent : meta.accent}
                     />
+                    </div>
                   </div>
                   <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
                     <TextButton onClick={undo} disabled={!history.length}>
@@ -267,6 +293,11 @@ export default function App() {
                     <Check on={showArrows} onClick={() => setShowArrows(!showArrows)}>
                       Flèches
                     </Check>
+                    {info?.engine && (
+                      <Check on={showEval} onClick={() => setShowEval(!showEval)}>
+                        Évaluation
+                      </Check>
+                    )}
                   </div>
                 </div>
               </section>
@@ -319,6 +350,12 @@ export default function App() {
                     ) : (
                       <Block title={`Ce que jouerait ${meta.short}`} note="probabilité du modèle">
                         <MoveBars moves={current?.get(player)} accent={meta.accent} onPick={view === "analyse" && !gameOver ? playUci : undefined} />
+                        {evalOn && freshEval?.best_san && (
+                          <p className="mt-3 border-t border-ink pt-3 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+                            Stockfish préfère <span className="font-serif text-lg normal-case tracking-normal text-ink">{freshEval.best_san}</span> ·{" "}
+                            {evalLabel(freshEval)}
+                          </p>
+                        )}
                       </Block>
                     )}
                     <Block title="Partie">
