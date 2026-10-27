@@ -7,47 +7,62 @@ type Props = {
   accent: string;
   onPick?: (uci: string) => void;
   count?: number;
+  size?: "lg" | "sm";
 };
 
-const OPACITY = [1, 0.75, 0.6, 0.5, 0.42];
-
-export function MoveBars({ moves, accent, onPick, count = 5 }: Props) {
-  if (!moves) return <div className="h-[212px] animate-pulse rounded-xl bg-white/[0.03]" />;
-  if (!moves.length) return <p className="py-6 text-center text-sm text-slate-400">Partie terminée.</p>;
-  const top = moves.slice(0, count);
+/** Liste éditoriale des coups préférés : rang, coup, filet de probabilité, pourcentage. */
+export function MoveBars({ moves, accent, onPick, count = 5, size = "lg" }: Props) {
+  const rowH = size === "lg" ? "py-2.5" : "py-1.5";
+  if (!moves)
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="h-6 animate-pulse bg-ink/5" />
+        ))}
+      </div>
+    );
+  if (!moves.length) return <p className="font-serif text-lg italic text-muted">Partie terminée.</p>;
   return (
-    <ul className="space-y-1.5">
+    <ol>
       <AnimatePresence initial={false} mode="popLayout">
-        {top.map((m, i) => (
+        {moves.slice(0, count).map((m, i) => (
           <motion.li
             key={m.uci}
             layout
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ type: "spring", stiffness: 500, damping: 40 }}
+            transition={{ duration: 0.25 }}
+            className="border-t border-rule first:border-t-0"
           >
             <button
               onClick={() => onPick?.(m.uci)}
               disabled={!onPick}
-              className="group relative flex w-full items-center gap-3 overflow-hidden rounded-xl bg-white/[0.03] px-3 py-2.5 text-left enabled:hover:bg-white/[0.07]"
+              className={`group grid w-full grid-cols-[1.6rem_4.2rem_1fr_3.2rem] items-center gap-3 text-left ${rowH}`}
             >
-              <motion.div
-                className="absolute inset-y-0 left-0 rounded-xl"
-                style={{ background: accent, opacity: 0.18 * OPACITY[i] + 0.04 }}
-                initial={false}
-                animate={{ width: `${Math.max(2, m.prob * 100)}%` }}
-                transition={{ type: "spring", stiffness: 160, damping: 26 }}
-              />
-              <span className="relative w-4 text-xs tabular-nums text-slate-500">{i + 1}</span>
-              <span className="relative font-display text-[17px] font-semibold text-white">{m.san}</span>
-              <span className="relative ml-auto text-sm font-medium tabular-nums" style={{ color: accent, opacity: OPACITY[i] }}>
-                {(m.prob * 100).toFixed(m.prob < 0.1 ? 1 : 0)} %
+              <span className="font-mono text-[10.5px] text-muted">{String(i + 1).padStart(2, "0")}</span>
+              <span
+                className={`font-serif leading-none transition-transform group-enabled:group-hover:translate-x-0.5 ${size === "lg" ? "text-[26px]" : "text-xl"}`}
+                style={{ color: i === 0 ? accent : undefined }}
+              >
+                {m.san}
+              </span>
+              <span className="relative h-px bg-rule">
+                <motion.span
+                  className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2"
+                  style={{ background: accent, opacity: i === 0 ? 1 : 0.55 }}
+                  initial={false}
+                  animate={{ width: `${Math.max(1.5, m.prob * 100)}%` }}
+                  transition={{ type: "spring", stiffness: 140, damping: 24 }}
+                />
+              </span>
+              <span className="text-right font-mono text-xs tabular-nums">
+                {(m.prob * 100).toFixed(m.prob < 0.1 ? 1 : 0)}%
               </span>
             </button>
           </motion.li>
         ))}
       </AnimatePresence>
-    </ul>
+    </ol>
   );
 }

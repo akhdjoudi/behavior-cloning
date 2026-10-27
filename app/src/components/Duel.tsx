@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { MoveProb } from "../api";
 import { metaOf } from "../players";
 import { arrowsFor, Board } from "./Board";
-import { Avatar } from "./PlayerList";
+import { displayOrder, Monogram } from "./Players";
 
 type Props = {
   players: string[];
@@ -16,55 +16,44 @@ type Props = {
 };
 
 /** Coups préférés regroupés : quels joueurs sont d'accord, lesquels divergent. */
-function consensus(players: string[], preds: Map<number, MoveProb[]>) {
+export function Consensus({ players, preds }: { players: string[]; preds: Map<number, MoveProb[]> }) {
   const groups = new Map<string, number[]>();
-  for (const [id, moves] of preds) {
-    if (id === 0 || !moves.length) continue;
-    const san = moves[0].san;
-    groups.set(san, [...(groups.get(san) ?? []), id]);
+  for (const id of displayOrder(players)) {
+    const best = preds.get(id)?.[0];
+    if (id !== 0 && best) groups.set(best.san, [...(groups.get(best.san) ?? []), id]);
   }
-  return [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([san, ids]) => ({ san, names: ids.map((i) => players[i]) }));
-}
-
-export function ConsensusChips({ players, preds }: { players: string[]; preds: Map<number, MoveProb[]> }) {
-  const groups = consensus(players, preds);
-  if (!groups.length) return null;
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  const total = sorted.reduce((n, [, ids]) => n + ids.length, 0);
+  if (!sorted.length) return <div className="h-10 animate-pulse bg-ink/5" />;
   return (
-    <div className="flex flex-wrap gap-2">
-      {groups.map((g) => (
-        <motion.div layout key={g.san} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-1 pr-3">
-          <div className="flex -space-x-2">
-            {g.names.map((n) => (
-              <Avatar key={n} name={n} size={24} />
+    <ul>
+      {sorted.map(([san, ids]) => (
+        <motion.li layout key={san} className="flex items-center gap-4 border-t border-rule py-3 first:border-t-0">
+          <span className="w-16 font-serif text-3xl leading-none">{san}</span>
+          <span className="flex flex-wrap gap-1">
+            {ids.map((id) => (
+              <Monogram key={id} name={players[id]} size={28} active />
             ))}
-          </div>
-          <span className="font-display text-sm font-semibold text-white">{g.san}</span>
-        </motion.div>
+          </span>
+          <span className="ml-auto font-mono text-[11px] text-muted">
+            {ids.length}/{total}
+          </span>
+        </motion.li>
       ))}
-    </div>
+    </ul>
   );
 }
 
 export function Duel({ players, preds, fen, orientation, turnColor, lastMove }: Props) {
-  const ids = [...players.keys()].filter((i) => i !== 0).concat([0]);
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
-      {ids.map((id) => {
+    <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3">
+      {displayOrder(players).map((id) => {
         const m = metaOf(players[id]);
         const moves = preds.get(id);
         const best = moves?.[0];
         return (
-          <div key={id} className="rounded-2xl border border-white/5 bg-white/[0.03] p-2.5">
-            <div className="mb-2 flex items-center gap-2">
-              <Avatar name={players[id]} size={26} />
-              <span className="truncate text-[13px] font-medium text-white">{m.short}</span>
-              {best && (
-                <span className="ml-auto font-display text-sm font-semibold" style={{ color: m.accent }}>
-                  {best.san}
-                </span>
-              )}
-            </div>
-            <div className="pointer-events-none">
+          <figure key={id}>
+            <div className="mini-frame" style={{ boxShadow: `4px 4px 0 ${m.accent}` }}>
               <Board
                 fen={fen}
                 orientation={orientation}
@@ -76,14 +65,22 @@ export function Duel({ players, preds, fen, orientation, turnColor, lastMove }: 
                 shapes={arrowsFor(moves, 3, false)}
               />
             </div>
-            <div className="mt-2 flex justify-between text-[11px] tabular-nums text-slate-400">
+            <figcaption className="mt-3 flex items-baseline justify-between gap-2">
+              <span className="truncate font-serif text-xl leading-none">{m.last}</span>
+              {best && (
+                <span className="font-serif text-xl italic leading-none" style={{ color: m.accent }}>
+                  {best.san}
+                </span>
+              )}
+            </figcaption>
+            <div className="mt-1.5 flex justify-between font-mono text-[10px] tabular-nums text-muted">
               {moves?.slice(0, 3).map((mv) => (
                 <span key={mv.uci}>
-                  {mv.san} <span className="text-slate-500">{Math.round(mv.prob * 100)}%</span>
+                  {mv.san} {Math.round(mv.prob * 100)}%
                 </span>
               ))}
             </div>
-          </div>
+          </figure>
         );
       })}
     </div>
