@@ -1,50 +1,98 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-paper: #f3eee4;
+  --color-paper-2: #e9e2d3;
+  --color-ink: #17140f;
+  --color-muted: #7a7062;
+  --color-rule: #17140f24;
 }
 
 :root {
-  color-scheme: dark;
-  --sq-light: #e7e2d6;
-  --sq-dark: #7c8a9c;
+  color-scheme: light;
+  --sq-light: #efe6d3;
+  --sq-dark: #b9a585;
+  --accent: #cf3a1f;
 }
 
 body {
-  background: #0b0d12;
+  background: var(--color-paper);
+  color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Cadre de l'échiquier principal */
-.board-frame {
-  background: linear-gradient(145deg, #ffffff14, #ffffff05);
-  border: 1px solid #ffffff14;
+/* Grain de papier */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0 0.06 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Échiquier : damier en CSS, couleurs ardoise et ivoire (pas de thème chessground importé) */
+::selection {
+  background: var(--accent);
+  color: var(--color-paper);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cadre de l'échiquier : filet d'encre et ombre décalée à la couleur du joueur */
+.board-frame {
+  border: 1px solid var(--color-ink);
+  padding: 7px;
+  background: var(--color-paper);
+  box-shadow: 8px 8px 0 var(--accent);
+  transition: box-shadow 0.5s ease;
+}
+.mini-frame {
+  border: 1px solid var(--color-ink);
+  padding: 3px;
+  background: var(--color-paper);
+}
+
+/* Échiquier : damier papier et sépia, en CSS (pas de thème chessground importé) */
 .board cg-board {
   background: repeating-conic-gradient(var(--sq-dark) 0 25%, var(--sq-light) 0 50%) 0 0 / 25% 25%;
-  border-radius: 8px;
-  overflow: hidden;
 }
 .board cg-board square.last-move {
-  background-color: #f6d36b55;
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .board cg-board square.selected {
-  background-color: #14532d66;
+  background-color: color-mix(in srgb, var(--color-ink) 22%, transparent);
 }
 .board cg-board square.move-dest {
-  background: radial-gradient(#0b0d1240 19%, #0000 20%);
+  background: radial-gradient(#17140f55 17%, #0000 18%);
 }
 .board cg-board square.oc.move-dest {
-  background: radial-gradient(transparent 0%, transparent 79%, #0b0d1240 80%);
+  background: radial-gradient(transparent 0%, transparent 78%, #17140f55 79%);
+}
+.board cg-board square.check {
+  background: radial-gradient(ellipse at center, #cf3a1f 0%, #cf3a1fb0 25%, #cf3a1f00 89%);
 }
 
-/* Coordonnées discrètes, dans la couleur de la case opposée */
 .board coords {
-  font-family: var(--font-sans);
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
   font-weight: 600;
 }
 .board coords coord {
@@ -60,16 +108,7 @@ body {
   color: var(--sq-light);
 }
 
-/* Étiquettes des flèches (pourcentages) */
-.board cg-auto-shapes text,
-.board svg.cg-custom-svgs text {
-  font-family: var(--font-sans);
+.board svg text {
+  font-family: var(--font-mono);
   font-weight: 700;
-}
-
-.no-scrollbar {
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
 }
