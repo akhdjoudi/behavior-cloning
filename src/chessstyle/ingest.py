@@ -13,18 +13,20 @@ Les positions utiles sont celles où `color` a le trait : coups d'indice pair po
 import argparse
 import hashlib
 import io
+import warnings
 from pathlib import Path
 
 import chess
 import chess.pgn
 import pandas as pd
 
-from chessstyle.players import GENERIC, PLAYER_ID
+from chessstyle.players import GENERIC, PLAYER_ID, PLAYERS
 
 MIN_ELO = 2200
 MIN_PLIES = 40  # 20 coups
 MIN_SECONDS = 480  # base + 40 * incrément : seuil « rapide » de Lichess
 SLOW_EVENTS = ("blitz", "bullet")
+MIN_GAMES = 1000  # en dessous, le style du joueur sera mal appris
 
 
 def _open(path: Path):
@@ -123,4 +125,12 @@ if __name__ == "__main__":
     df = ingest(args.paths, args.source)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out, index=False)
-    print(stats(df) if len(df) else "aucune partie retenue")
+    if df.empty:
+        print("aucune partie retenue")
+    else:
+        table = stats(df)
+        print(table)
+        if args.source == "icons":
+            for pid, games in table["games"].items():
+                if games < MIN_GAMES:
+                    warnings.warn(f"{PLAYERS[pid]} : seulement {games} parties (< {MIN_GAMES}), style mal appris")
