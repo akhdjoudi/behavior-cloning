@@ -6,20 +6,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getInfo, predict, sampleMove, type Info, type MoveProb } from "./api";
 import { arrowsFor, Board } from "./components/Board";
-import { ConsensusChips, Duel } from "./components/Duel";
+import { Consensus, Duel } from "./components/Duel";
 import { MoveBars } from "./components/MoveBars";
-import { PlayerList } from "./components/PlayerList";
+import { displayOrder, PlayerIndex, PlayerSwitcher } from "./components/Players";
+import { Profile } from "./components/Profile";
 import { metaOf } from "./players";
 
-type Mode = "analyse" | "jouer" | "duel";
+type View = "joueurs" | "jouer" | "analyse" | "duel";
 
-const MODES: { id: Mode; label: string; hint: string }[] = [
-  { id: "analyse", label: "Analyse", hint: "Joue les deux camps et regarde ce que chaque légende jouerait." },
-  { id: "jouer", label: "Jouer", hint: "Affronte un style : le bot répond comme le joueur choisi." },
-  { id: "duel", label: "Duel", hint: "La même position vue par tous les joueurs, côte à côte." },
+const VIEWS: { id: View; label: string }[] = [
+  { id: "joueurs", label: "Joueurs" },
+  { id: "jouer", label: "Jouer" },
+  { id: "analyse", label: "Analyse" },
+  { id: "duel", label: "Duel" },
 ];
 
-const BOT_DELAY_MS = 450;
+const BOT_DELAY_MS = 500;
 
 export default function App() {
   const [info, setInfo] = useState<Info | null>(null);
@@ -27,7 +29,7 @@ export default function App() {
   const game = useRef(new Chess());
   const [fen, setFen] = useState(game.current.fen());
   const [player, setPlayer] = useState(1);
-  const [mode, setMode] = useState<Mode>("analyse");
+  const [view, setView] = useState<View>("joueurs");
   const [orientation, setOrientation] = useState<Color>("white");
   const [userColor, setUserColor] = useState<Color>("white");
   const [vary, setVary] = useState(false);
@@ -45,6 +47,7 @@ export default function App() {
   const meta = metaOf(players[player] ?? "Tal");
   const turn: Color = chess.turn() === "w" ? "white" : "black";
   const gameOver = chess.isGameOver();
+  const onBoard = view !== "joueurs";
 
   const dests = useMemo(() => {
     const d = new Map<Key, Key[]>();
@@ -59,8 +62,8 @@ export default function App() {
 
   // Prédictions de la position courante : le joueur choisi, ou tout le monde en mode duel
   useEffect(() => {
-    if (!info) return;
-    const wanted = mode === "duel" ? [...info.players.keys()] : [player];
+    if (!info || !onBoard) return;
+    const wanted = view === "duel" ? [...info.players.keys()] : [player];
     let cancelled = false;
     predict(fen, wanted)
       .then((byPlayer) => !cancelled && setPreds({ fen, byPlayer }))
@@ -68,7 +71,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [fen, player, mode, info]);
+  }, [fen, player, view, info, onBoard]);
 
   const current = preds.fen === fen ? preds.byPlayer : undefined;
 
@@ -84,7 +87,7 @@ export default function App() {
   const playUci = useCallback((uci: string) => play(uci.slice(0, 2), uci.slice(2, 4), uci[4]), [play]);
 
   // Le bot joue quand c'est son tour, avec le style du joueur choisi
-  const botTurn = mode === "jouer" && turn !== userColor && !gameOver;
+  const botTurn = view === "jouer" && turn !== userColor && !gameOver;
   useEffect(() => {
     const moves = current?.get(player);
     if (!botTurn || !moves?.length) return;
@@ -99,7 +102,7 @@ export default function App() {
   const undo = () => {
     chess.undo();
     // En mode jeu, on revient au dernier coup du joueur humain
-    if (mode === "jouer" && (chess.turn() === "w" ? "white" : "black") !== userColor) chess.undo();
+    if (view === "jouer" && (chess.turn() === "w" ? "white" : "black") !== userColor) chess.undo();
     setFen(chess.fen());
   };
   const chooseColor = (c: Color) => {
@@ -107,17 +110,18 @@ export default function App() {
     setOrientation(c);
     reset();
   };
-  const switchMode = (m: Mode) => {
-    setMode(m);
-    if (m === "jouer") {
+  const goTo = (v: View) => {
+    setView(v);
+    if (v === "jouer") {
       setShowArrows(false);
       setOrientation(userColor);
     } else setShowArrows(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const shapes: DrawShape[] = useMemo(() => {
     if (!current || !showArrows) return [];
-    if (mode !== "duel") return arrowsFor(current.get(player));
+    if (view !== "duel") return arrowsFor(current.get(player));
     // Duel : la flèche préférée de chaque joueur, à sa couleur
     return [...current.entries()]
       .filter(([id, moves]) => id !== 0 && moves.length)
@@ -127,216 +131,236 @@ export default function App() {
         brush: `pl-${players[id]}`,
         modifiers: { lineWidth: 9 },
       }));
-  }, [current, showArrows, mode, player, players]);
+  }, [current, showArrows, view, player, players]);
 
   const status = chess.isCheckmate()
-    ? `Échec et mat · ${turn === "white" ? "les Noirs" : "les Blancs"} gagnent`
+    ? `Échec et mat, ${turn === "white" ? "les Noirs" : "les Blancs"} gagnent`
     : chess.isStalemate()
-      ? "Pat · partie nulle"
+      ? "Pat, partie nulle"
       : chess.isDraw()
         ? "Partie nulle"
         : botTurn
           ? `${meta.short} réfléchit…`
-          : `Trait aux ${turn === "white" ? "Blancs" : "Noirs"}${chess.inCheck() ? " · échec" : ""}`;
+          : `Trait aux ${turn === "white" ? "Blancs" : "Noirs"}${chess.inCheck() ? ", échec" : ""}`;
 
-  const movable: Color | "both" | undefined = gameOver ? undefined : mode === "jouer" ? (botTurn ? undefined : userColor) : "both";
+  const movable: Color | "both" | undefined = gameOver ? undefined : view === "jouer" ? (botTurn ? undefined : userColor) : "both";
+  const accent = view === "duel" ? "#17140f" : meta.accent;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#0b0d12] text-slate-200">
-      <div
-        className="pointer-events-none fixed inset-0 transition-[background] duration-700"
-        style={{ background: `radial-gradient(900px 500px at 50% -10%, ${meta.accent}22, transparent 70%)` }}
-      />
-
-      <header className="relative mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-4 py-5 lg:px-8">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-xl bg-white/[0.06] text-2xl ring-1 ring-white/10">♞</div>
-          <div>
-            <h1 className="font-display text-xl font-semibold tracking-tight text-white">Chess Style Cloning</h1>
-            <p className="text-xs text-slate-400">Joue contre le style des légendes des échecs</p>
-          </div>
+    <div className="relative min-h-screen" style={{ ["--accent" as string]: accent }}>
+      <header className="sticky top-0 z-40 border-b border-ink bg-paper/90 backdrop-blur-sm">
+        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-5 lg:px-10">
+          <button onClick={() => goTo("joueurs")} className="flex items-baseline gap-3 text-left">
+            <span className="font-serif text-[26px] leading-none">
+              Style <em>Cloning</em>
+            </span>
+            <span className="label hidden md:inline">Échecs · imitation de style</span>
+          </button>
+          <nav className="flex gap-4 sm:gap-8">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => goTo(v.id)}
+                className={`relative py-1 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors ${view === v.id ? "text-ink" : "text-muted hover:text-ink"}`}
+              >
+                {v.label}
+                {view === v.id && (
+                  <motion.span layoutId="nav-underline" className="absolute -bottom-px left-0 right-0 h-[2px] bg-[var(--accent)]" />
+                )}
+              </button>
+            ))}
+          </nav>
+          {info && <span className="label hidden lg:inline">{info.trained ? `Modèle · ${info.model}` : "Poids aléatoires"}</span>}
         </div>
-
-        <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => switchMode(m.id)}
-              className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${mode === m.id ? "text-[#0b0d12]" : "text-slate-300 hover:text-white"}`}
-            >
-              {mode === m.id && (
-                <motion.span
-                  layoutId="mode-pill"
-                  className="absolute inset-0 rounded-full bg-white"
-                  transition={{ type: "spring", stiffness: 500, damping: 38 }}
-                />
-              )}
-              <span className="relative">{m.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {info && (
-          <div
-            className={`rounded-full border px-3 py-1 text-xs ${info.trained ? "border-white/10 text-slate-400" : "border-amber-400/30 bg-amber-400/10 text-amber-200"}`}
-          >
-            {info.trained ? `Modèle · ${info.model}` : "Poids aléatoires · modèle non entraîné"}
-          </div>
-        )}
       </header>
 
       {apiError && (
-        <div className="relative mx-auto mb-4 max-w-[1440px] px-4 lg:px-8">
-          <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-            API injoignable. Lance <code className="rounded bg-black/30 px-1.5 py-0.5">python -m chessstyle.server</code> puis recharge
-            la page.
-          </div>
+        <div className="border-b border-ink bg-[#cf3a1f] px-5 py-2.5 text-center font-mono text-xs text-paper">
+          API injoignable · lance python -m chessstyle.server puis recharge la page
         </div>
       )}
 
-      <main
-        className={`relative mx-auto grid max-w-[1440px] grid-cols-[minmax(0,1fr)] gap-6 px-4 pb-12 lg:px-8 ${
-          mode === "duel" ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)_340px]"
-        }`}
-      >
-        {mode !== "duel" && (
-          <aside className="order-2 min-w-0 lg:order-1">
-            <PlayerList players={players} selected={player} onSelect={setPlayer} />
-          </aside>
-        )}
-
-        <section className="order-1 min-w-0 lg:order-2">
-          <div className="mx-auto w-full max-w-[min(680px,calc(100vh-150px))]">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={status}
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  className="text-sm text-slate-300"
-                >
-                  {status}
-                </motion.p>
-              </AnimatePresence>
-              <p className="hidden text-xs text-slate-500 sm:block">{MODES.find((m) => m.id === mode)?.hint}</p>
-            </div>
-            <div className="board-frame rounded-[14px] p-[6px]" style={{ boxShadow: `0 30px 80px -40px ${meta.accent}aa` }}>
-              <Board
-                fen={fen}
-                orientation={orientation}
-                turnColor={turn}
-                dests={dests}
-                movableColor={movable}
-                lastMove={lastMove}
-                check={chess.inCheck()}
-                shapes={shapes}
-                onMove={(from, to) => play(from, to)}
-                accent={meta.accent}
-              />
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Control onClick={undo} disabled={!history.length}>
-                ↶ Annuler
-              </Control>
-              <Control onClick={reset}>⟲ Nouvelle partie</Control>
-              <Control onClick={() => setOrientation(orientation === "white" ? "black" : "white")}>⇅ Retourner</Control>
-              <Toggle on={showArrows} onClick={() => setShowArrows(!showArrows)}>
-                Flèches
-              </Toggle>
-            </div>
-          </div>
-        </section>
-
-        <aside className="order-3 min-w-0 space-y-5">
-          {mode === "duel" ? (
-            <>
-              <Panel title="Qui joue quoi ?">
-                {current ? <ConsensusChips players={players} preds={current} /> : <div className="h-8 animate-pulse rounded-full bg-white/[0.03]" />}
-              </Panel>
-              <Duel players={players} preds={current ?? new Map()} fen={fen} orientation={orientation} turnColor={turn} lastMove={lastMove} />
-            </>
-          ) : (
-            <>
-              {mode === "jouer" && (
-                <Panel title="Ta partie">
-                  <div className="flex gap-2">
-                    <Toggle on={userColor === "white"} onClick={() => chooseColor("white")}>
-                      Blancs
-                    </Toggle>
-                    <Toggle on={userColor === "black"} onClick={() => chooseColor("black")}>
-                      Noirs
-                    </Toggle>
-                    <Toggle on={vary} onClick={() => setVary(!vary)} title="Le bot tire ses coups selon les probabilités au lieu de jouer toujours le plus probable">
-                      Varier les coups
-                    </Toggle>
-                  </div>
-                </Panel>
-              )}
-              <Panel title={mode === "jouer" ? `${meta.short} à ta place` : `Ce que jouerait ${meta.short}`} accent={meta.accent}>
-                <MoveBars
-                  moves={current?.get(player)}
-                  accent={meta.accent}
-                  onPick={mode === "analyse" && !gameOver ? playUci : undefined}
+      <main className="relative mx-auto max-w-[1440px] px-5 pb-20 lg:px-10">
+        <AnimatePresence mode="wait">
+          {view === "joueurs" ? (
+            <motion.div
+              key="joueurs"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="grid grid-cols-[minmax(0,1fr)] gap-10 pt-8 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-16 lg:pt-14"
+            >
+              <aside className="min-w-0 lg:sticky lg:top-28 lg:self-start">
+                <p className="label mb-4 hidden lg:block">Index des joueurs</p>
+                <PlayerIndex players={players} selected={player} onSelect={setPlayer} />
+                <p className="mt-6 hidden max-w-[260px] text-sm leading-relaxed text-muted lg:block">
+                  Un seul réseau de neurones, entraîné sur leurs parties, qui imite le style de chacun.
+                </p>
+              </aside>
+              {info && (
+                <Profile
+                  name={players[player]}
+                  player={player}
+                  index={displayOrder(players).indexOf(player) + 1}
+                  ready={!!info}
+                  onPlay={() => {
+                    reset();
+                    goTo("jouer");
+                  }}
+                  onAnalyse={() => goTo("analyse")}
                 />
-              </Panel>
-              <Panel title="Coups joués">
-                <MoveList sans={history.map((m) => m.san)} />
-              </Panel>
-            </>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="board"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`grid grid-cols-[minmax(0,1fr)] gap-10 pt-8 lg:gap-14 lg:pt-12 ${
+                view === "duel" ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-[minmax(0,1fr)_380px]"
+              }`}
+            >
+              <section className="min-w-0">
+                <div className="mx-auto w-full max-w-[min(720px,calc(100vh-190px))]">
+                  <div className="mb-4 flex items-baseline justify-between gap-4">
+                    <AnimatePresence mode="wait">
+                      <motion.p
+                        key={status}
+                        initial={{ opacity: 0, y: -3 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 3 }}
+                        className="font-serif text-2xl italic"
+                      >
+                        {status}
+                      </motion.p>
+                    </AnimatePresence>
+                    <span className="label">Coup {Math.floor(history.length / 2) + 1}</span>
+                  </div>
+                  <div className="board-frame">
+                    <Board
+                      fen={fen}
+                      orientation={orientation}
+                      turnColor={turn}
+                      dests={dests}
+                      movableColor={movable}
+                      lastMove={lastMove}
+                      check={chess.inCheck()}
+                      shapes={shapes}
+                      onMove={(from, to) => play(from, to)}
+                      accent={meta.accent}
+                    />
+                  </div>
+                  <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <TextButton onClick={undo} disabled={!history.length}>
+                      ← Annuler
+                    </TextButton>
+                    <TextButton onClick={reset}>Nouvelle partie</TextButton>
+                    <TextButton onClick={() => setOrientation(orientation === "white" ? "black" : "white")}>Retourner</TextButton>
+                    <Check on={showArrows} onClick={() => setShowArrows(!showArrows)}>
+                      Flèches
+                    </Check>
+                  </div>
+                </div>
+              </section>
+
+              <aside className="min-w-0 space-y-10">
+                {view === "duel" ? (
+                  <>
+                    <Block title="Qui joue quoi ?" note="coup préféré de chaque légende">
+                      {current ? <Consensus players={players} preds={current} /> : <div className="h-10 animate-pulse bg-ink/5" />}
+                    </Block>
+                    <Duel players={players} preds={current ?? new Map()} fen={fen} orientation={orientation} turnColor={turn} lastMove={lastMove} />
+                  </>
+                ) : (
+                  <>
+                    <PlayerSwitcher players={players} selected={player} onSelect={setPlayer} />
+                    {view === "jouer" && (
+                      <Block title="Ta partie">
+                        <div className="flex flex-wrap gap-x-6 gap-y-3">
+                          <Check on={userColor === "white"} onClick={() => chooseColor("white")}>
+                            Blancs
+                          </Check>
+                          <Check on={userColor === "black"} onClick={() => chooseColor("black")}>
+                            Noirs
+                          </Check>
+                          <Check on={vary} onClick={() => setVary(!vary)}>
+                            Varier les coups
+                          </Check>
+                        </div>
+                      </Block>
+                    )}
+                    <Block title={view === "jouer" ? `${meta.short} à ta place` : `Ce que jouerait ${meta.short}`} note="probabilité du modèle">
+                      <MoveBars moves={current?.get(player)} accent={meta.accent} onPick={view === "analyse" && !gameOver ? playUci : undefined} />
+                    </Block>
+                    <Block title="Partie">
+                      <MoveList sans={history.map((m) => m.san)} />
+                    </Block>
+                  </>
+                )}
+              </aside>
+            </motion.div>
           )}
-        </aside>
+        </AnimatePresence>
       </main>
+
+      <footer className="border-t border-ink">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap justify-between gap-2 px-5 py-4 lg:px-10">
+          <span className="label">Données · PGN Mentor, Lichess Elite 2024</span>
+          <span className="label">behavior-cloning · contrat d'encodage v{info?.encoding_version ?? 1}</span>
+        </div>
+      </footer>
     </div>
   );
 }
 
-function Panel({ title, accent, children }: { title: string; accent?: string; children: React.ReactNode }) {
+function Block({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 backdrop-blur">
-      <h2 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-        {accent && <span className="size-1.5 rounded-full" style={{ background: accent }} />}
-        {title}
-      </h2>
+    <section>
+      <div className="mb-3 flex items-baseline justify-between gap-4 border-b border-ink pb-2">
+        <h2 className="font-serif text-[26px] leading-none">{title}</h2>
+        {note && <span className="label">{note}</span>}
+      </div>
       {children}
     </section>
   );
 }
 
-function Control(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function TextButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-sm text-slate-200 transition-colors hover:bg-white/[0.09] disabled:opacity-40"
+      className="font-mono text-[11px] uppercase tracking-[0.16em] underline-offset-4 hover:underline disabled:opacity-35 disabled:hover:no-underline"
     />
   );
 }
 
-function Toggle({ on, ...props }: { on: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function Check({ on, children, ...props }: { on: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
-      {...props}
-      className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
-        on ? "border-white/80 bg-white text-[#0b0d12]" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.09]"
-      }`}
-    />
+    <button {...props} className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em]">
+      <span
+        className="grid size-3.5 place-items-center border border-ink transition-colors"
+        style={{ background: on ? "var(--accent)" : "transparent", borderColor: on ? "var(--accent)" : undefined }}
+      />
+      {children}
+    </button>
   );
 }
 
 function MoveList({ sans }: { sans: string[] }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: "nearest" }), [sans.length]);
-  if (!sans.length) return <p className="text-sm text-slate-500">Aucun coup pour l'instant.</p>;
+  if (!sans.length) return <p className="font-serif text-lg italic text-muted">Aucun coup pour l'instant.</p>;
   const rows = [];
   for (let i = 0; i < sans.length; i += 2) rows.push([sans[i], sans[i + 1]]);
   return (
-    <div className="max-h-56 overflow-y-auto pr-1">
-      <div className="grid grid-cols-[2.2rem_1fr_1fr] gap-x-2 gap-y-1 text-sm">
+    <div className="max-h-60 overflow-y-auto pr-1">
+      <div className="grid grid-cols-[2.4rem_1fr_1fr] gap-y-1">
         {rows.map(([w, b], i) => (
           <div key={i} className="contents">
-            <span className="tabular-nums text-slate-500">{i + 1}.</span>
-            <span className="text-slate-200">{w}</span>
-            <span className="text-slate-200">{b ?? ""}</span>
+            <span className="font-mono text-[11px] leading-7 text-muted">{i + 1}.</span>
+            <span className="font-serif text-xl leading-7">{w}</span>
+            <span className="font-serif text-xl leading-7">{b ?? ""}</span>
           </div>
         ))}
       </div>

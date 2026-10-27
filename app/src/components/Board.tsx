@@ -53,7 +53,7 @@ export function arrowsFor(moves: MoveProb[] | undefined, count = 5, labels = tru
     dest: m.uci.slice(2, 4) as Key,
     brush: `p${i}`,
     modifiers: { lineWidth: Math.round(4 + 12 * Math.sqrt(m.prob / top)) },
-    label: labels && m.prob >= 0.04 ? { text: `${Math.round(m.prob * 100)}`, fill: "#0b0d12" } : undefined,
+    label: labels && m.prob >= 0.04 ? { text: `${Math.round(m.prob * 100)}`, fill: "#f3eee4" } : undefined,
   }));
 }
 
