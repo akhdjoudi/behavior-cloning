@@ -2,6 +2,7 @@
 
 import h5py
 import pytest
+import yaml
 
 torch = pytest.importorskip("torch")
 
@@ -27,3 +28,17 @@ def test_train_and_evaluate_from_loader(tmp_path):
     loss, top1 = evaluate(model, val_loader, "cpu")
     assert loss == loss and 0 <= top1 <= 1  # fini, pas NaN
     assert (tmp_path / "out" / "model.pt").exists()
+
+
+def test_best_checkpoint_and_init(tmp_path):
+    """Avec une validation, model.pt est le meilleur modèle ; --init repart d'un run précédent."""
+    data = random_positions(200)
+    kw = {"channels": 16, "blocks": 1}
+    first = train(data, str(tmp_path / "a"), epochs=3, batch_size=100, val_data=data, model_kwargs=kw)
+    best = yaml.safe_load((tmp_path / "a" / "config.yaml").read_text())["best"]
+    assert 0 <= best["epoch"] < 3
+    assert evaluate(first, data, "cpu")[1] == pytest.approx(best["val_top1"])  # le modèle rendu est le meilleur
+
+    second = train(data, str(tmp_path / "b"), epochs=1, batch_size=100, lr=0.0, model_kwargs=kw, init=str(tmp_path / "a"))
+    # lr nul : les poids repartis ne bougent pas (les statistiques de BatchNorm, si)
+    assert torch.equal(second.stem[0].weight, first.stem[0].weight)

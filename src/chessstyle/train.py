@@ -85,13 +85,18 @@ def train(
     val_data=None,
     wandb_project: str | None = None,
     seed: int = 0,
+    init: str | None = None,
 ) -> ChessNet:
     torch.manual_seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = device == "cuda"
     model_kwargs = {"num_players": len(PLAYERS), **(model_kwargs or {})}
     model = ChessNet(**model_kwargs).to(device)
+    if init:  # fine-tune : on repart d'un run précédent (dossier ou model.pt)
+        weights = Path(init) / "model.pt" if Path(init).is_dir() else Path(init)
+        model.load_state_dict(torch.load(weights, map_location=device))
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)  # le surapprentissage arrive vite avec un lr constant
     scaler = torch.amp.GradScaler(device, enabled=use_amp)
 
     config = {
@@ -105,6 +110,7 @@ def train(
 
         run = wandb.init(project=wandb_project, config=config)
 
+    best_top1 = -1.0
     for epoch in range(epochs):
         model.train()
         if hasattr(data, "dataset"):
@@ -122,14 +128,21 @@ def train(
             total += loss.item() * len(b["target"])
             n += len(b["target"])
 
+        sched.step()
         log = {"epoch": epoch, "train_loss": total / n}
         if val_data is not None:
             log["val_loss"], log["val_top1"] = evaluate(model, val_data, device)
+            if log["val_top1"] > best_top1:  # on garde le meilleur modèle, pas le dernier
+                best_top1 = log["val_top1"]
+                save(model, {**config, "best": {"epoch": epoch, "val_top1": best_top1, "val_loss": log["val_loss"]}}, out_dir)
         print(log)
         if run:
             run.log(log)
 
-    save(model, config, out_dir)
+    if val_data is None:
+        save(model, config, out_dir)
+    else:
+        model.load_state_dict(torch.load(Path(out_dir) / "model.pt", map_location=device))
     if run:
         run.finish()
     return model
@@ -151,6 +164,8 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--init", help="run (dossier ou model.pt) dont on repart, pour le fine-tune")
+    p.add_argument("--weight-decay", type=float, default=1e-2)
     p.add_argument("--subset", type=int, help="ne garde que les N premières positions, en mémoire (test de sanité)")
     p.add_argument("--workers", type=int, default=0, help="processus de lecture du DataLoader")
     p.add_argument("--wandb", metavar="PROJET")
@@ -163,8 +178,8 @@ def main() -> None:
         data = make_loader(a.h5, a.batch_size, num_workers=a.workers, drop_last=True)
         val = make_loader(a.val, 256, shuffle=False, num_workers=a.workers) if a.val else None
     train(
-        data, a.out, a.epochs, a.batch_size, a.lr,
-        val_data=val, wandb_project=a.wandb,
+        data, a.out, a.epochs, a.batch_size, a.lr, a.weight_decay,
+        val_data=val, wandb_project=a.wandb, init=a.init,
     )
 
 
