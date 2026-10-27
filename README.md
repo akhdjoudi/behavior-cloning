@@ -15,7 +15,7 @@ wandb login
 pytest -q
 ```
 
-Sous Windows : `.venv\Scriptsctivate` à la place de `source`, et Stockfish via `winget install Stockfish.Stockfish` (ou le binaire de stockfishchess.org, ajouté au `PATH`).
+Sous Windows : `.venv\Scripts\activate` à la place de `source`, et Stockfish via `winget install Stockfish.Stockfish` (ou le binaire de stockfishchess.org, ajouté au `PATH`).
 
 ## Structure
 
