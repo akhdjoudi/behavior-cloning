@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+}
+
+:root {
+  color-scheme: dark;
+  --sq-light: #e7e2d6;
+  --sq-dark: #7c8a9c;
+}
+
+body {
+  background: #0b0d12;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Cadre de l'échiquier principal */
+.board-frame {
+  background: linear-gradient(145deg, #ffffff14, #ffffff05);
+  border: 1px solid #ffffff14;
+}
+
+/* Échiquier : damier en CSS, couleurs ardoise et ivoire (pas de thème chessground importé) */
+.board cg-board {
+  background: repeating-conic-gradient(var(--sq-dark) 0 25%, var(--sq-light) 0 50%) 0 0 / 25% 25%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.board cg-board square.last-move {
+  background-color: #f6d36b55;
+}
+.board cg-board square.selected {
+  background-color: #14532d66;
+}
+.board cg-board square.move-dest {
+  background: radial-gradient(#0b0d1240 19%, #0000 20%);
+}
+.board cg-board square.oc.move-dest {
+  background: radial-gradient(transparent 0%, transparent 79%, #0b0d1240 80%);
+}
+
+/* Coordonnées discrètes, dans la couleur de la case opposée */
+.board coords {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+}
+.board coords coord {
+  color: var(--sq-dark);
+}
+.board coords coord:nth-child(2n) {
+  color: var(--sq-light);
+}
+.board coords.ranks coord:nth-child(2n) {
+  color: var(--sq-dark);
+}
+.board coords.ranks coord:nth-child(2n + 1) {
+  color: var(--sq-light);
+}
+
+/* Étiquettes des flèches (pourcentages) */
+.board cg-auto-shapes text,
+.board svg.cg-custom-svgs text {
+  font-family: var(--font-sans);
+  font-weight: 700;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
