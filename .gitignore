@@ -12,3 +12,4 @@ data/*
 *.pt
 *.ckpt
 wandb/
+runs/
