@@ -97,3 +97,29 @@ def test_reference_index_e2e4_and_e7e5():
 def test_legal_mask_matches_legal_moves():
     for board in random_positions(200, seed=1):
         assert game.legal_mask(board).sum() == board.legal_moves.count()
+
+
+@pytest.mark.parametrize(
+    "fen, square",
+    [
+        ("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", chess.D6),
+        ("4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", chess.D6),  # d3 vu du côté des Noirs, après mirroring
+    ],
+)
+def test_en_passant_plane(fen, square):
+    planes = game.encode(chess.Board(fen))
+    assert planes[16].sum() == 1
+    assert planes[16, chess.square_rank(square), chess.square_file(square)] == 1
+
+
+def test_castling_planes_are_seen_from_the_side_to_move():
+    # Seuls les Blancs ont le petit roque
+    white = game.encode(chess.Board("r3k2r/8/8/8/8/8/8/R3K2R w K - 0 1"))
+    black = game.encode(chess.Board("r3k2r/8/8/8/8/8/8/R3K2R b K - 0 1"))
+    assert [white[12 + i].min() for i in range(4)] == [1, 0, 0, 0]  # mon petit roque
+    assert [black[12 + i].min() for i in range(4)] == [0, 0, 1, 0]  # son petit roque
+
+
+def test_halfmove_plane_is_capped_at_100():
+    planes = game.encode(chess.Board("4k3/8/8/8/8/8/8/4K3 w - - 150 200"))
+    assert (planes[17] == 100).all()
