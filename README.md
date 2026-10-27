@@ -30,9 +30,24 @@ src/chessstyle/
 ├── model.py          # rôle 1 : ResNet conditionné par le joueur
 ├── train.py          # rôle 1 : pré-entraînement et fine-tune
 ├── evaluate.py       # rôle 2 : top-k, matrice croisée
-└── style_bench.py    # rôle 2 : métriques de style Stockfish
-configs/   app/   tests/   docs/   data/ (ignoré par Git)
+├── style_bench.py    # rôle 2 : métriques de style Stockfish
+├── inference.py      # rôle 2 : distribution des coups d'une position, par joueur
+└── server.py         # rôle 2 : API FastAPI de l'appli
+app/       # rôle 2 : interface React (chessground), modes Analyse, Jouer, Duel
+configs/   tests/   docs/   data/ et runs/ (ignorés par Git)
 ```
+
+## Appli de démo
+
+Il faut Node.js 22 ou plus récent.
+
+```bash
+cd app && npm ci && npm run build && cd ..
+python -m chessstyle.server --model runs/latest     # http://127.0.0.1:8000
+```
+
+`--model` accepte un dossier de run de `train.py` ou un fichier TorchScript (`python -m chessstyle.model` crée `dummy_model.pt`). Sans `--model`, les poids sont aléatoires.
+Pour développer l'interface avec rechargement à chaud : lancer le serveur, puis `cd app && npm run dev` (http://localhost:5173, les appels `/api` partent vers le port 8000).
 
 ## Règles
 
