@@ -7,6 +7,17 @@ export type Info = {
   trained: boolean;
   model: string;
   encoding_version: number;
+  engine: string | null; // Stockfish côté serveur, null s'il n'est pas installé
+};
+
+/** Évaluation Stockfish du point de vue des Blancs : centipions, ou mat en N (négatif si les Noirs matent). */
+export type Evaluation = {
+  cp: number | null;
+  mate: number | null;
+  winner?: "white" | "black";
+  depth?: number;
+  best?: string | null;
+  best_san?: string | null;
 };
 
 export async function getInfo(): Promise<Info> {
@@ -25,6 +36,16 @@ export async function predict(fen: string, players: number[]): Promise<Map<numbe
   if (!res.ok) throw new Error(`API ${res.status}`);
   const data: { players: { id: number; moves: MoveProb[] }[] } = await res.json();
   return new Map(data.players.map((p) => [p.id, p.moves]));
+}
+
+export async function evaluate(fen: string): Promise<Evaluation> {
+  const res = await fetch("/api/eval", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fen }),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
 }
 
 /** Tire un coup : température 0 = le plus probable, 1 = la distribution du modèle telle quelle. */
