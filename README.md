@@ -5,8 +5,6 @@ Livrable : une démo jouable avec les probabilités de coups affichées sur l'é
 
 **Résultat** : un ResNet conditionné par un embedding de joueur, pré-entraîné sur Lichess puis ajusté sur 6 grands maîtres, prédit le coup réel avec **39,3 %** de top-1 (hors ouverture) et 67,8 % de top-3, contre 37,4 % pour le modèle Lichess seul. Le conditionnement par joueur se mesure à environ +0,6 point ; le benchmark de style est détaillé dans [Résultats](#résultats).
 
-Plan de projet complet (vision, tâches par rôle, planning) : https://claude.ai/artifact/VpVWEHbMFxdTUavUfF3bGG
-
 ## Démo
 
 ![Démo : la même position vue par Tal, Petrosian, puis par les six joueurs](docs/img/demo.gif)
