@@ -40,13 +40,34 @@ def load_h5(path: str, subset: int | None = None) -> dict[str, torch.Tensor]:
     return data
 
 
-def batches(data, batch_size: int, shuffle: bool):
+def balanced_indices(player_id: torch.Tensor, per_player: int, mix_share: float = 0.0, seed: int = 0) -> torch.Tensor:
+    """Positions d'une époque : `per_player` par joueur (id >= 1), plus des positions Lichess (id 0) pour `mix_share` de l'époque.
+
+    Les joueurs peu fournis sont tirés avec remise, les autres sans.
+    """
+    g = torch.Generator().manual_seed(seed)
+
+    def draw(ids: torch.Tensor, k: int) -> torch.Tensor:
+        if len(ids) >= k:
+            return ids[torch.randperm(len(ids), generator=g)[:k]]
+        return ids[torch.randint(len(ids), (k,), generator=g)]
+
+    parts = [draw((player_id == p).nonzero().squeeze(1), per_player) for p in player_id.unique().tolist() if p != 0]
+    if mix_share > 0:
+        n_mix = round(per_player * len(parts) * mix_share / (1 - mix_share))
+        parts.append(draw((player_id == 0).nonzero().squeeze(1), n_mix))
+    order = torch.cat(parts)
+    return order[torch.randperm(len(order), generator=g)]
+
+
+def batches(data, batch_size: int, shuffle: bool, order: torch.Tensor | None = None):
     """Itère sur des batchs : un DataLoader est déjà découpé, un dict de tenseurs se découpe ici."""
     if not isinstance(data, dict):
         yield from data
         return
-    n = len(data["target"])
-    order = torch.randperm(n) if shuffle else torch.arange(n)
+    n = len(data["target"]) if order is None else len(order)
+    if order is None:
+        order = torch.randperm(n) if shuffle else torch.arange(n)
     for i in range(0, n, batch_size):
         idx = order[i : i + batch_size]
         yield {k: v[idx] for k, v in data.items()}
@@ -86,6 +107,8 @@ def train(
     wandb_project: str | None = None,
     seed: int = 0,
     init: str | None = None,
+    sampler=None,
+    patience: int | None = None,
 ) -> ChessNet:
     torch.manual_seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -110,13 +133,14 @@ def train(
 
         run = wandb.init(project=wandb_project, config=config)
 
-    best_top1 = -1.0
+    best_top1, stale = -1.0, 0
     for epoch in range(epochs):
         model.train()
         if hasattr(data, "dataset"):
             data.dataset.set_epoch(epoch)  # autre tirage du mélange à chaque époque
         total = n = 0
-        for b in batches(data, batch_size, shuffle=True):
+        order = sampler(epoch) if sampler else None  # tirage équilibré propre à l'époque
+        for b in batches(data, batch_size, shuffle=True, order=order):
             b = {k: v.to(device) for k, v in b.items()}
             with torch.autocast(device, dtype=torch.float16, enabled=use_amp):
                 logits = _policy(model(b["board"], b["player_id"]))
@@ -132,12 +156,15 @@ def train(
         log = {"epoch": epoch, "train_loss": total / n}
         if val_data is not None:
             log["val_loss"], log["val_top1"] = evaluate(model, val_data, device)
+            stale += 1
             if log["val_top1"] > best_top1:  # on garde le meilleur modèle, pas le dernier
-                best_top1 = log["val_top1"]
+                best_top1, stale = log["val_top1"], 0
                 save(model, {**config, "best": {"epoch": epoch, "val_top1": best_top1, "val_loss": log["val_loss"]}}, out_dir)
         print(log)
         if run:
             run.log(log)
+        if patience and stale >= patience:
+            break
 
     if val_data is None:
         save(model, config, out_dir)
@@ -166,20 +193,33 @@ def main() -> None:
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--init", help="run (dossier ou model.pt) dont on repart, pour le fine-tune")
     p.add_argument("--weight-decay", type=float, default=1e-2)
+    p.add_argument("--balance", type=int, metavar="N", help="N positions par joueur à chaque époque (charge le fichier en mémoire)")
+    p.add_argument("--mix-h5", help="HDF5 Lichess dont on mélange des positions (id 0) avec --balance")
+    p.add_argument("--mix-share", type=float, default=0.2, help="part de Lichess dans une époque")
+    p.add_argument("--mix-pool", type=int, default=150_000, help="positions Lichess chargées en mémoire")
+    p.add_argument("--patience", type=int, help="arrêt après N époques sans progrès du top-1 de validation")
     p.add_argument("--subset", type=int, help="ne garde que les N premières positions, en mémoire (test de sanité)")
     p.add_argument("--workers", type=int, default=0, help="processus de lecture du DataLoader")
     p.add_argument("--wandb", metavar="PROJET")
     a = p.parse_args()
 
+    sampler = None
     if a.subset:
         data = load_h5(a.h5, a.subset)
         val = load_h5(a.val) if a.val else data  # sans fichier de validation, on mesure sur le train (test de sanité)
     else:
-        data = make_loader(a.h5, a.batch_size, num_workers=a.workers, drop_last=True)
+        if a.balance:
+            data = load_h5(a.h5)
+            if a.mix_h5:
+                mix = load_h5(a.mix_h5, a.mix_pool)
+                data = {k: torch.cat([data[k], mix[k]]) for k in data}
+            sampler = lambda epoch: balanced_indices(data["player_id"], a.balance, a.mix_share if a.mix_h5 else 0.0, seed=epoch)
+        else:
+            data = make_loader(a.h5, a.batch_size, num_workers=a.workers, drop_last=True)
         val = make_loader(a.val, 256, shuffle=False, num_workers=a.workers) if a.val else None
     train(
         data, a.out, a.epochs, a.batch_size, a.lr, a.weight_decay,
-        val_data=val, wandb_project=a.wandb, init=a.init,
+        val_data=val, wandb_project=a.wandb, init=a.init, sampler=sampler, patience=a.patience,
     )
 
 
