@@ -24,14 +24,25 @@ const VIEWS: { id: View; label: string }[] = [
 
 const BOT_DELAY_MS = 500;
 
+// Lien direct vers une position : ?fen=...&vue=analyse (une FEN invalide est ignorée)
+const params = new URLSearchParams(window.location.search);
+function initialGame(): Chess {
+  try {
+    return new Chess(params.get("fen") ?? undefined);
+  } catch {
+    return new Chess();
+  }
+}
+const initialView = VIEWS.find((v) => v.id === params.get("vue"))?.id ?? "joueurs";
+
 export default function App() {
   const [info, setInfo] = useState<Info | null>(null);
   const [apiError, setApiError] = useState(false);
-  const game = useRef(new Chess());
+  const game = useRef(initialGame());
   const [fen, setFen] = useState(game.current.fen());
   const [player, setPlayer] = useState(1); // joueur étudié, ou adversaire en mode Jouer
   const [coach, setCoach] = useState(2); // inspiration en mode Jouer : jamais l'adversaire
-  const [view, setView] = useState<View>("joueurs");
+  const [view, setView] = useState<View>(initialView);
   const [orientation, setOrientation] = useState<Color>("white");
   const [userColor, setUserColor] = useState<Color>("white");
   const [vary, setVary] = useState(false);
@@ -263,7 +274,7 @@ export default function App() {
                       </motion.p>
                     </AnimatePresence>
                     <span className="label">
-                      Coup {Math.floor(history.length / 2) + 1}
+                      Coup {chess.moveNumber()}
                       {evalOn && freshEval && ` · Stockfish ${evalLabel(freshEval)}`}
                     </span>
                   </div>
