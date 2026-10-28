@@ -7,6 +7,16 @@ Livrable : une démo jouable avec les probabilités de coups affichées sur l'é
 
 Plan de projet complet (vision, tâches par rôle, planning) : https://claude.ai/artifact/VpVWEHbMFxdTUavUfF3bGG
 
+## Démo
+
+![Démo : la même position vue par Tal, Petrosian, puis par les six joueurs](docs/img/demo.gif)
+
+Est-indienne, coup 13, trait aux Noirs. Le modèle conditionné sur Tal joue l'attaque **Cf6-h5** (51 %, contre 12 % pour Petrosian) ; conditionné sur Petrosian, il préfère le regroupement **Cf6-d7** (48 %, contre 9 % pour Tal). En mode Duel, les six joueurs se répartissent en trois coups : Ch5 pour Tal et Fischer, Cfd7 pour Petrosian et Capablanca, d5 pour Kasparov et Carlsen.
+
+Cette position est choisie : c'est celle où Tal et Petrosian divergent le plus parmi 400 positions de milieu de partie tirées au hasard (distance de variation totale 0,44, médiane 0,14). Dans une position typique, les distributions sont bien plus proches (voir [Limites](#limites)).
+
+[Ouvrir cette position dans l'appli](http://127.0.0.1:8000/?vue=analyse&fen=r1bqr1k1/1p3pbp/2pp1np1/p1n5/2PNP3/2N1BPPP/PP4B1/R2QR1K1%20b%20-%20-%201%2013) (serveur lancé en local, voir [Appli de démo](#appli-de-démo)).
+
 ## Le modèle
 
 - **Entrée** : 18 plans 8×8 vus du côté du joueur qui a le trait, **sortie** : 4 672 logits (73 types de coups × 64 cases), masqués aux coups légaux (contrat : `docs/CONTRACT.md`).
@@ -110,10 +120,11 @@ Il faut Node.js 22 ou plus récent.
 
 ```bash
 cd app && npm ci && npm run build && cd ..
-python -m chessstyle.server --model runs/latest     # http://127.0.0.1:8000
+PYTHONPATH=src python -m chessstyle.server --model models/icons_finetune     # http://127.0.0.1:8000
 ```
 
-`--model` accepte un dossier de run de `train.py` ou un fichier TorchScript (`python -m chessstyle.model` crée `dummy_model.pt`). Sans `--model`, les poids sont aléatoires.
+`--model` accepte un dossier de run de `train.py` (comme `models/icons_finetune` : poids, `config.yaml`, `players.json`) ou un fichier TorchScript (`python -m chessstyle.model` crée `dummy_model.pt`). Sans `--model`, les poids sont aléatoires.
+Pour ouvrir directement une position : `http://127.0.0.1:8000/?vue=analyse&fen=...` (`vue` vaut `joueurs`, `jouer`, `analyse` ou `duel`).
 La barre d'évaluation utilise Stockfish s'il est installé (`sudo apt install stockfish`, ou `--stockfish CHEMIN`) ; sinon elle est masquée.
 Pour développer l'interface avec rechargement à chaud : lancer le serveur, puis `cd app && npm run dev` (http://localhost:5173, les appels `/api` partent vers le port 8000).
 
