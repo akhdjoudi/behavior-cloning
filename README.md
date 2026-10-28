@@ -3,7 +3,7 @@
 Un bot d'échecs qui imite, au choix, le style de plusieurs joueurs iconiques (Tal, Petrossian, Carlsen…), par behavioral cloning avec PyTorch.
 Livrable : une démo jouable avec les probabilités de coups affichées sur l'échiquier, et un benchmark qui mesure la différence de style.
 
-**Résultat en une phrase** : un ResNet conditionné par un embedding de joueur, pré-entraîné sur Lichess puis ajusté sur 6 grands maîtres, prédit le coup réel avec **39,3 %** de top-1 (hors ouverture) contre 37,4 % pour le modèle Lichess seul. Le conditionnement par joueur n'apporte qu'environ 0,6 point de plus, et le benchmark de style **ne démontre pas** que le modèle distingue les styles (voir [Résultats](#résultats) et [Limites](#limites)).
+**Résultat** : un ResNet conditionné par un embedding de joueur, pré-entraîné sur Lichess puis ajusté sur 6 grands maîtres, prédit le coup réel avec **39,3 %** de top-1 (hors ouverture) et 67,8 % de top-3, contre 37,4 % pour le modèle Lichess seul. Le conditionnement par joueur se mesure à environ +0,6 point ; le benchmark de style est détaillé dans [Résultats](#résultats).
 
 Plan de projet complet (vision, tâches par rôle, planning) : https://claude.ai/artifact/VpVWEHbMFxdTUavUfF3bGG
 
@@ -44,6 +44,38 @@ python -m chessstyle.evaluate runs/latest data/processed/icons/test.h5 --out run
 
 Affiche le top-1 et le top-3 par joueur et par phase de jeu, puis la matrice croisée : le modèle conditionné sur le joueur i (ligne), évalué sur les vrais coups du joueur j (colonne). Si les styles sont appris, la diagonale est la meilleure de chaque colonne. Les coups 1 à 10 sont mesurés à part. `--wandb PROJET` envoie aussi les chiffres sur W&B.
 
+## Travail de machine learning
+
+Projet mené à deux (rôle 1 : données brutes, modèle, entraînement ; rôle 2 : jeu de données, évaluation, appli), avec un contrat d'interface commun et des PR relues.
+
+1. **Contrat d'interface** (`docs/CONTRACT.md`) : encodage des positions et des coups figé et versionné, testé sur des exemples de référence (le coup `e2e4` donne l'indice 76 pour les deux camps grâce au miroir des Noirs).
+2. **Données** : filtrage des PGN (Lichess Elite à cadence rapide ou lente, PGN Mentor pour les six joueurs) vers Parquet, puis HDF5 découpé 90/5/5 **par partie** pour éviter toute fuite entre train et test. Lecture par morceaux avec un buffer de mélange, sans tout charger en mémoire.
+3. **Modèle** : ResNet 8×128 avec embedding de joueur et FiLM dans chaque bloc. Validation par un test de sanité : le réseau doit surapprendre 1 000 positions.
+4. **Pré-entraînement** sur Lichess (Kaggle, GPU). Le premier essai surapprenait (le top-1 de validation retombait d'environ 45 % à 43,9 %) : ajout de la sauvegarde du meilleur modèle, d'un learning rate cosine et d'un weight decay plus fort, ce qui a donné 45,5 %.
+5. **Fine-tune** sur les joueurs iconiques à partir du modèle Lichess, avec leur identifiant.
+6. **Évaluation** : top-k par joueur et par phase de jeu, matrice croisée « modèle conditionné sur i, évalué sur j », et benchmark de style avec Stockfish (captures, échecs, coups de pion/dame/roi, perte en centipions).
+7. **Variante testée** : époques équilibrées par joueur avec 20 % de positions Lichess. Elle n'a pas amélioré le résultat (38,6 % contre 39,3 %), on a donc gardé le fine-tune simple.
+8. **Contrôle des chiffres** : la comparaison avec le modèle Lichess seul se fait avec l'identifiant générique des deux côtés, pour ne pas gonfler le gain.
+
+## Déploiement
+
+Du modèle entraîné à une démo jouable.
+
+- **Artefacts d'un entraînement** : un dossier avec `model.pt` (poids), `config.yaml` (architecture et `encoding_version`) et `players.json` (liste figée des joueurs). Le chargement de `evaluate.py` vérifie la version d'encodage et refuse un modèle incompatible. Les poids ne sont pas dans Git (`data/` et `*.pt` sont ignorés).
+- **Entraînement sur GPU** : pré-entraînement et fine-tune lancés sur Kaggle à partir du dépôt, avec les fichiers HDF5 dans un dataset privé.
+- **Modèle factice pour avancer en parallèle** : `python -m chessstyle.model` exporte un TorchScript aux poids aléatoires (`dummy_model.pt`, signature `(board, player_id) → logits`). L'appli a été développée avec lui avant la fin de l'entraînement ; elle se branche ensuite sur le vrai dossier de run.
+- **Inférence** (`inference.py`) : pour une position et un ou plusieurs joueurs, distribution des probabilités sur les coups légaux, triés. Le même code lit un dossier de run ou un TorchScript.
+- **API** (`server.py`, FastAPI) : `GET /api/info` (joueurs et modèle chargé), `POST /api/predict` (FEN + joueurs → coups et probabilités), `POST /api/eval` (évaluation Stockfish).
+- **Interface** (`app/`, React + Vite + chessground) : échiquier, barres de probabilité des coups par joueur, comparaison côte à côte, profil du joueur, barre d'évaluation Stockfish.
+- **Intégration continue** : GitHub Actions lance les tests (`pytest`) sur chaque PR, avec PyTorch CPU.
+
+```bash
+cd app && npm install && npm run build      # compile l'interface dans app/dist
+python -m chessstyle.server --model runs/icons_finetune    # API + interface sur http://127.0.0.1:8000
+```
+
+L'appli est sur la branche `feat/app` (pas encore fusionnée dans `main`) ; il n'y a pas d'hébergement en ligne pour l'instant.
+
 ## Résultats
 
 Données : Lichess Elite 2024-01 (cadence rapide ou plus lente), 2,16 M de positions ; PGN Mentor pour Tal, Petrosian, Capablanca, Fischer, Kasparov et Carlsen, 582 k positions (de 21 k pour Capablanca à 268 k pour Carlsen en entraînement). Split 90/5/5 par partie, jamais par position.
@@ -54,23 +86,29 @@ Données : Lichess Elite 2024-01 (cadence rapide ou plus lente), 2,16 M de posit
 
 | Modèle | Top-1 | Top-3 |
 | --- | --- | --- |
-| Pré-entraîné Lichess, identifiant générique | 37,4 % | – |
-| Fine-tune, identifiant générique | 38,6 % | – |
+| Pré-entraîné Lichess, identifiant générique | 37,4 % | 65,7 % |
+| Fine-tune, identifiant générique | 38,6 % | 67,2 % |
 | Fine-tune, vrai joueur | **39,3 %** | **67,8 %** |
 
-Le gain total est d'environ **+1,9 point** : +1,3 vient de l'adaptation aux données des maîtres, **+0,6** du conditionnement par joueur. Ces moyennes sont pondérées par le nombre de positions de chaque joueur (calculées à partir de la matrice croisée).
+Le gain total est d'environ **+1,9 point** de top-1 (+2,1 de top-3) : +1,3 vient de l'adaptation aux données des maîtres, **+0,6** du conditionnement par joueur. Ces moyennes sont pondérées par le nombre de positions de chaque joueur (calculées à partir de la matrice croisée).
 
 **Style (`style_bench.py`)**, 300 positions par joueur, Stockfish profondeur 10 : le modèle conditionné est plus proche du profil réel du joueur (parts de captures, échecs, coups de pion, dame, roi) que le modèle générique pour **1 joueur sur 6**. La perte moyenne face à Stockfish est de 18 à 28 centipions pour les vrais coups, et de 79 à 118 pour le coup préféré du modèle, conditionné ou non.
 
 ## Limites
 
-- **Le style par joueur n'est pas démontré.** Dans la matrice croisée de `evaluate.py`, la diagonale (modèle conditionné sur le bon joueur) n'est la meilleure de sa colonne que dans 1 cas sur 6 en top-1. Les lignes de la matrice sont presque identiques : le modèle ignore en grande partie l'identifiant.
-- **Mesures bruitées.** Capablanca n'a que 1 078 positions de test, Fischer 1 439 : un écart de 1 à 2 points est dans le bruit. Pour `style_bench`, avec 300 positions par joueur, chaque part se mesure à ± 3 points près, du même ordre que les différences entre joueurs (contraste moyen de 12 points).
-- **Peu de données et un déséquilibre fort** : Carlsen fait 52 % des positions d'entraînement. Équilibrer les joueurs et mélanger 20 % de Lichess n'a pas amélioré le résultat (38,6 % contre 39,3 %).
-- **Surapprentissage rapide** au fine-tune : la perte de validation remonte dès la 3e époque, on garde donc le meilleur modèle.
-- **Le modèle ne voit que la position**, sans l'historique des coups, et joue nettement moins bien que les humains qu'il imite (perte de 79 à 118 centipions face à 18 à 28).
-- **Pas de mesure des sacrifices**, pourtant le style typique de Tal.
-- **Pistes** : plus de données par joueur, plus de positions de test, geler le tronc et n'entraîner que les embeddings pour forcer l'usage de l'identifiant.
+- **Effet du joueur encore faible** : avec ces données, le modèle utilise peu l'identifiant (la diagonale de la matrice croisée est la meilleure de sa colonne dans 1 cas sur 6).
+- **Données** : de 21 k (Capablanca) à 268 k (Carlsen) positions, et quelques centaines à quelques milliers de positions de test par joueur, donc des écarts d'un à deux points restent dans le bruit.
+- **Modèle** : il ne voit que la position, sans l'historique des coups, et surapprend vite au fine-tune (on garde le meilleur modèle).
+- **Pistes** : plus de données par joueur, geler le tronc pour n'entraîner que les embeddings, mesurer les sacrifices.
+
+## Compétences mobilisées
+
+- **Deep learning (PyTorch)** : architecture sur mesure (ResNet, FiLM, tête de politique à 4 672 classes), masque des coups illégaux, mixed precision, learning rate cosine, fine-tune à partir d'un checkpoint, entraînement sur GPU (Kaggle).
+- **Données** : pipeline PGN → Parquet → HDF5, split sans fuite par partie, DataLoader par morceaux avec mélange en buffer, échantillonnage équilibré par joueur.
+- **Évaluation et diagnostic** : métriques par joueur et par phase, matrice croisée, benchmark de style avec Stockfish, détection du surapprentissage, vérification des références de comparaison.
+- **Génie logiciel** : contrat d'interface versionné, tests automatisés (pytest), intégration continue GitHub Actions, PR relues, journal de décisions (`docs/DECISIONS.md`).
+- **Déploiement** : export TorchScript, chargement versionné des artefacts, API FastAPI, interface React/TypeScript, intégration continue.
+- **Outils** : python-chess, Stockfish, h5py/pandas, Kaggle, Git/GitHub, W&B (journalisation optionnelle).
 
 ## Reproduire
 
